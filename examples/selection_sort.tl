@@ -1,30 +1,30 @@
-set $n inputNum
+set $n in
 set $i 0
-while less $i $n {
-    arraySet $a $i inputNum
+while les $i $n {
+    aset $a $i in
     set $i add $i 1
 }
 
 set $i 0
-while less $i sub $n 1 {
+while les $i sub $n 1 {
     set $min $i
     set $j add $i 1
-    while less $j $n {
-        if less arrayGet $a $j arrayGet $a $min {
+    while les $j $n {
+        if les aget $a $j aget $a $min {
             set $min $j
         }
         set $j add $j 1
     }
-    set $tmp arrayGet $a $i
-    arraySet $a $i arrayGet $a $min
-    arraySet $a $min $tmp
+    set $tmp aget $a $i
+    aset $a $i aget $a $min
+    aset $a $min $tmp
     set $i add $i 1
 }
 
 set $i 0
-while less $i $n {
-    print arrayGet $a $i
-    printChar 32
+while les $i $n {
+    out aget $a $i
+    cout 32
     set $i add $i 1
 }
-printChar 10
+cout 10

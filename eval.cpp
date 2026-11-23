@@ -29,12 +29,15 @@ Result eval(const Statement* root, State& state) {
             }
             return ret;
         }
+
         case Type::Num: {
             return {root->num};
         }
+
         case Type::Var: {
             return {state.variable[root->name]};
         }
+
         case Type::InputNum: {
             std::string s;
             if (!(std::cin >> s)) {
@@ -48,21 +51,26 @@ Result eval(const Statement* root, State& state) {
             }
             return {num};
         }
+
         case Type::InputChar: {
             return {std::cin.get()};
         }
+
         case Type::InputVis: {
             char c;
             std::cin >> c;
             return {c};
         }
+
         case Type::Not: {
             return {eval(root->kids.at(0), state).value == 0 ? 1 : 0};
         }
+
         case Type::Print: {
             std::cout << eval(root->kids.at(0), state).value;
             return {1};
         }
+
         case Type::PrintChar: {
             ll c = eval(root->kids.at(0), state).value;
             if (c < 0 || c > 127) {
@@ -72,21 +80,25 @@ Result eval(const Statement* root, State& state) {
             std::cout << static_cast<char>(c);
             return {1};
         }
+
         case Type::Add: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
             return {a + b};
         }
+
         case Type::Sub: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
             return {a - b};
         }
+
         case Type::Mul: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
             return {a * b};
         }
+
         case Type::Div: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
@@ -96,6 +108,7 @@ Result eval(const Statement* root, State& state) {
             }
             return {a / b};
         }
+
         case Type::Mod: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
@@ -105,48 +118,58 @@ Result eval(const Statement* root, State& state) {
             }
             return {a % b};
         }
+
         case Type::Greater: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
             return {a > b ? 1 : 0};
         }
+
         case Type::Less: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
             return {a < b ? 1 : 0};
         }
+
         case Type::Equal: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
             return {a == b ? 1 : 0};
         }
+
         case Type::And: {
             if (eval(root->kids.at(0), state).value == 0) return {0};  // 短路
             return {eval(root->kids.at(1), state).value != 0 ? 1 : 0};
         }
+
         case Type::Or: {
             if (eval(root->kids.at(0), state).value != 0) return {1};  // 短路
             return {eval(root->kids.at(1), state).value != 0 ? 1 : 0};
         }
+
         case Type::BitAnd: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
             return {a & b};
         }
+
         case Type::BitOr: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
             return {a | b};
         }
+
         case Type::BitXor: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
             return {a ^ b};
         }
+
         case Type::BitNot: {
             return {~eval(root->kids.at(0), state).value};
         }
-        case Type::Shl: {
+
+        case Type::LeftShift: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
             if (b < 0 || b >= kBitWidth) {
@@ -155,7 +178,8 @@ Result eval(const Statement* root, State& state) {
             }
             return {static_cast<ll>(static_cast<unsigned long long>(a) << b)};
         }
-        case Type::Shr: {
+
+        case Type::RightShift: {
             ll a = eval(root->kids.at(0), state).value;
             ll b = eval(root->kids.at(1), state).value;
             if (b < 0 || b >= kBitWidth) {
@@ -164,11 +188,13 @@ Result eval(const Statement* root, State& state) {
             }
             return {a >> b};
         }
+
         case Type::Set: {
             ll val = eval(root->kids.at(0), state).value;
             state.variable[root->name] = val;
             return {val};
         }
+
         case Type::ArraySet: {
             ll raw_idx = eval(root->kids.at(0), state).value;
             if (raw_idx < 0) {
@@ -183,6 +209,7 @@ Result eval(const Statement* root, State& state) {
             state.array[root->name].at(idx) = val;
             return {1};
         }
+
         case Type::ArrayGet: {
             ll raw_idx = eval(root->kids.at(0), state).value;
             auto it = state.array.find(root->name);
@@ -201,14 +228,17 @@ Result eval(const Statement* root, State& state) {
             }
             return {it->second.at(idx)};
         }
+
         case Type::ArrayLen: {
             auto it = state.array.find(root->name);
             return {it == state.array.end() ? 0 : static_cast<ll>(it->second.size())};
         }
+
         case Type::If: {
             if (eval(root->kids.at(0), state).value == 0) return {0};
             return eval(root->kids.at(1), state);
         }
+
         case Type::While: {
             std::size_t count = 0;
             while (eval(root->kids.at(0), state).value != 0) {
@@ -218,9 +248,11 @@ Result eval(const Statement* root, State& state) {
             }
             return {static_cast<ll>(count)};
         }
+
         case Type::Break: {
             return {0, Flow::Break};
         }
+
         case Type::Continue: {
             return {0, Flow::Continue};
         }

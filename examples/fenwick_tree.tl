@@ -1,45 +1,45 @@
-set $n inputNum
+set $n in
 
 set $i 0
-while not greater $i $n {
-    arraySet $bit $i 0
+while not gre $i $n {
+    aset $bit $i 0
     set $i add $i 1
 }
 
 set $i 1
-while not greater $i $n {
-    set $delta inputNum
+while not gre $i $n {
+    set $delta in
     set $j $i
-    while not greater $j $n {
-        arraySet $bit $j add arrayGet $bit $j $delta
-        set $j add $j bitAnd $j sub 0 $j
+    while not gre $j $n {
+        aset $bit $j add aget $bit $j $delta
+        set $j add $j & $j sub 0 $j
     }
     set $i add $i 1
 }
 
-set $q inputNum
+set $q in
 set $k 0
-while less $k $q {
-    set $op inputNum
-    set $idx inputNum
-    if equal $op 1 {
-        set $delta inputNum
+while les $k $q {
+    set $op in
+    set $idx in
+    if eq $op 1 {
+        set $delta in
         set $j $idx
-        while not greater $j $n {
-            arraySet $bit $j add arrayGet $bit $j $delta
-            set $j add $j bitAnd $j sub 0 $j
+        while not gre $j $n {
+            aset $bit $j add aget $bit $j $delta
+            set $j add $j & $j sub 0 $j
         }
     }
-    if equal $op 2 {
+    if eq $op 2 {
         set $sum 0
         set $j $idx
-        while greater $j 0 {
-            set $sum add $sum arrayGet $bit $j
-            set $j sub $j bitAnd $j sub 0 $j
+        while gre $j 0 {
+            set $sum add $sum aget $bit $j
+            set $j sub $j & $j sub 0 $j
         }
-        print $sum
-        printChar 32
+        out $sum
+        cout 32
     }
     set $k add $k 1
 }
-printChar 10
+cout 10
