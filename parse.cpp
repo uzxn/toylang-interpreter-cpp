@@ -4,6 +4,7 @@
 #include <limits>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "toylang.h"
@@ -48,15 +49,15 @@ const std::unordered_map<std::string, InsInfo> instructions = {
     {">>", {Type::RightShift, 2, false}},
 
     {"set", {Type::Set, 1, true}},
+    {"gset", {Type::GlobalSet, 1, true}},
     {"aset", {Type::ArraySet, 2, true}},
     {"aget", {Type::ArrayGet, 1, true}},
     {"alen", {Type::ArrayLen, 0, true}},
 
-    {"if", {Type::If, 2, false}},
     {"while", {Type::While, 2, false}},
 };
 
-void parseError(const std::string& msg) {
+[[noreturn]] void parseError(const std::string& msg) {
     std::cerr << msg << std::endl;
     std::exit(1);
 }
@@ -115,6 +116,62 @@ Statement* parse(const std::vector<std::string>& list, std::size_t& index) {
         return new Statement{Type::Var, 0, token.substr(1)};
     }
 
+    // 函数定义: func $name [ $p1 $p2 ... ] { body }
+    if (token == "func") {
+        std::string name = parseVarName(list, index, token);
+        if (index >= list.size() || list.at(index) != "[") parseError("func: expected '['");
+        index++;
+        std::vector<std::string> params;
+        std::unordered_set<std::string> seen;
+        while (index < list.size() && list.at(index) != "]") {
+            std::string param = list.at(index++);
+            if (param.size() < 2 || param.front() != '$') {
+                parseError("func: expected parameter name, got " + param);
+            }
+            param = param.substr(1);
+            if (!seen.insert(param).second) parseError("func: duplicate parameter $" + param);
+            params.push_back(param);
+        }
+        if (index >= list.size()) parseError("func: missing ']'");
+        index++;
+        Statement* body = parse(list, index);
+        if (body->type != Type::Block) parseError("func: body must be a block");
+        return new Statement{Type::Func, 0, name, std::vector<Statement*>{body}, params};
+    }
+
+    // 函数调用: call $name [ arg1 arg2 ... ]
+    if (token == "call") {
+        std::string name = parseVarName(list, index, token);
+        if (index >= list.size() || list.at(index) != "[") parseError("call: expected '['");
+        index++;
+        std::vector<Statement*> args;
+        while (index < list.size() && list.at(index) != "]") args.push_back(parse(list, index));
+        if (index >= list.size()) parseError("call: missing ']'");
+        index++;
+        return new Statement{Type::Call, 0, name, args};
+    }
+
+    // 返回: return expr
+    if (token == "return") {
+        Statement* value = parse(list, index);
+        return new Statement{Type::Return, 0, "", std::vector<Statement*>{value}};
+    }
+
+    // 条件分支: if cond body [else body]
+    if (token == "if") {
+        Statement* cond = parse(list, index);
+        Statement* thenBody = parse(list, index);
+        std::vector<Statement*> kids{cond, thenBody};
+        if (index < list.size() && list.at(index) == "else") {
+            index++;
+            if (index >= list.size()) parseError("else: missing statement");
+            kids.push_back(parse(list, index));
+        }
+        return new Statement{Type::If, 0, "", kids};
+    }
+
+    if (token == "else") parseError("else: without matching if");
+
     // 指令: 按元数据读取变量名参数和语句参数
     auto ins = instructions.find(token);
     if (ins != instructions.end()) {
@@ -127,6 +184,105 @@ Statement* parse(const std::vector<std::string>& list, std::size_t& index) {
         return new Statement{info.type, 0, name, kids};
     }
 
-    std::cerr << "invalid token: " << token << std::endl;
-    return nullptr;
+    parseError("invalid token: " + token);
+}
+
+namespace {
+
+struct FuncInfo {
+    std::size_t arity;
+    std::size_t order;
+};
+
+// inFunction: 是否位于函数体内; inLoop: 是否位于 while 内; inArg: 是否位于参数位置
+void validateStatement(const Statement* root, const std::unordered_map<std::string, FuncInfo>& functions,
+                       bool inFunction, bool inLoop, bool inArg, std::size_t order) {
+    switch (root->type) {
+        case Type::Func: {
+            parseError("func: function definition must be at top level");
+            break;
+        }
+
+        case Type::Call: {
+            auto it = functions.find(root->name);
+            if (it == functions.end()) parseError("call: undefined function $" + root->name);
+            if (root->kids.size() != it->second.arity) {
+                parseError("call: arity mismatch for $" + root->name);
+            }
+            if (!inFunction && it->second.order > order) {
+                parseError("call: function $" + root->name + " used before its definition");
+            }
+            for (const Statement* s : root->kids) {
+                validateStatement(s, functions, inFunction, inLoop, true, order);
+            }
+            break;
+        }
+
+        case Type::Return: {
+            if (inArg) parseError("return: not allowed in argument position");
+            if (!inFunction) parseError("return: outside function");
+            for (const Statement* s : root->kids) {
+                validateStatement(s, functions, inFunction, inLoop, true, order);
+            }
+            break;
+        }
+
+        case Type::Break:
+        case Type::Continue: {
+            const std::string ins = root->type == Type::Break ? "break" : "continue";
+            if (inArg) parseError(ins + ": not allowed in argument position");
+            if (!inLoop) parseError(ins + ": outside loop");
+            break;
+        }
+
+        case Type::Block: {
+            for (const Statement* s : root->kids) {
+                validateStatement(s, functions, inFunction, inLoop, inArg, order);
+            }
+            break;
+        }
+
+        case Type::If: {
+            validateStatement(root->kids.at(0), functions, inFunction, inLoop, true, order);
+            for (std::size_t i = 1; i < root->kids.size(); ++i) {
+                validateStatement(root->kids.at(i), functions, inFunction, inLoop, inArg, order);
+            }
+            break;
+        }
+
+        case Type::While: {
+            validateStatement(root->kids.at(0), functions, inFunction, inLoop, true, order);
+            validateStatement(root->kids.at(1), functions, inFunction, true, inArg, order);
+            break;
+        }
+
+        default: {
+            for (const Statement* s : root->kids) {
+                validateStatement(s, functions, inFunction, inLoop, true, order);
+            }
+            break;
+        }
+    }
+}
+
+}  // namespace
+
+// 加载期校验: 函数定义位置/重名、调用 arity 与定义顺序、return/break/continue 位置
+void validate(const std::vector<Statement*>& program) {
+    std::unordered_map<std::string, FuncInfo> functions;
+    for (std::size_t i = 0; i < program.size(); ++i) {
+        const Statement* s = program.at(i);
+        if (s->type != Type::Func) continue;
+        auto result = functions.emplace(s->name, FuncInfo{s->params.size(), i});
+        if (!result.second) parseError("func: duplicate function $" + s->name);
+    }
+
+    for (std::size_t i = 0; i < program.size(); ++i) {
+        const Statement* s = program.at(i);
+        if (s->type == Type::Func) {
+            validateStatement(s->kids.at(0), functions, true, false, false, i);
+        } else {
+            validateStatement(s, functions, false, false, false, i);
+        }
+    }
 }

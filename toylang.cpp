@@ -24,6 +24,7 @@ int main(int argc, char** argv) {
     std::size_t index = 0;
     std::vector<Statement*> program;
     while (index < list.size()) program.push_back(parse(list, index));
+    validate(program);
 
     index = 0;
     while (index < program.size()) eval(program.at(index++), state);

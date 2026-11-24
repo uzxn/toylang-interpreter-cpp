@@ -10,6 +10,26 @@
 namespace {
 
 constexpr ll kBitWidth = static_cast<ll>(std::numeric_limits<unsigned long long>::digits);
+constexpr std::size_t kMaxCallDepth = 1000;
+
+// 读变量: 当前调用帧 -> 全局 -> 0
+ll getVar(const State& state, const std::string& name) {
+    if (!state.frames.empty()) {
+        auto it = state.frames.back().find(name);
+        if (it != state.frames.back().end()) return it->second;
+    }
+    auto it = state.global.find(name);
+    return it == state.global.end() ? 0 : it->second;
+}
+
+// 写变量: 顶层写全局, 函数内写当前帧
+void setVar(State& state, const std::string& name, ll value) {
+    if (state.frames.empty()) {
+        state.global[name] = value;
+    } else {
+        state.frames.back()[name] = value;
+    }
+}
 
 }  // namespace
 
@@ -35,7 +55,7 @@ Result eval(const Statement* root, State& state) {
         }
 
         case Type::Var: {
-            return {state.variable[root->name]};
+            return {getVar(state, root->name)};
         }
 
         case Type::InputNum: {
@@ -191,7 +211,13 @@ Result eval(const Statement* root, State& state) {
 
         case Type::Set: {
             ll val = eval(root->kids.at(0), state).value;
-            state.variable[root->name] = val;
+            setVar(state, root->name, val);
+            return {val};
+        }
+
+        case Type::GlobalSet: {
+            ll val = eval(root->kids.at(0), state).value;
+            state.global[root->name] = val;
             return {val};
         }
 
@@ -235,7 +261,10 @@ Result eval(const Statement* root, State& state) {
         }
 
         case Type::If: {
-            if (eval(root->kids.at(0), state).value == 0) return {0};
+            if (eval(root->kids.at(0), state).value == 0) {
+                if (root->kids.size() == 2) return {0};
+                return eval(root->kids.at(2), state);
+            }
             return eval(root->kids.at(1), state);
         }
 
@@ -245,6 +274,7 @@ Result eval(const Statement* root, State& state) {
                 count++;
                 Result r = eval(root->kids.at(1), state);
                 if (r.flow == Flow::Break) break;
+                if (r.flow == Flow::Return) return r;  // 返回穿透循环
             }
             return {static_cast<ll>(count)};
         }
@@ -255,6 +285,61 @@ Result eval(const Statement* root, State& state) {
 
         case Type::Continue: {
             return {0, Flow::Continue};
+        }
+
+        case Type::Func: {
+            state.function[root->name] = root;
+            return {1};
+        }
+
+        case Type::Call: {
+            auto it = state.function.find(root->name);
+            if (it == state.function.end()) {
+                std::cerr << "undefined function: " << root->name << std::endl;
+                return {0};
+            }
+            const Statement* fn = it->second;
+            if (root->kids.size() != fn->params.size()) {
+                std::cerr << "arity mismatch: " << root->name << std::endl;
+                return {0};
+            }
+            if (state.depth >= kMaxCallDepth) {
+                std::cerr << "call depth exceeded: " << root->name << std::endl;
+                return {0};
+            }
+
+            // 实参在调用者帧内从左到右求值
+            std::vector<ll> args;
+            args.reserve(root->kids.size());
+            for (const Statement* s : root->kids) {
+                Result arg = eval(s, state);
+                if (arg.flow != Flow::Normal) {
+                    std::cerr << "control flow in argument list" << std::endl;
+                    return {0};
+                }
+                args.push_back(arg.value);
+            }
+
+            state.frames.emplace_back();
+            for (std::size_t i = 0; i < fn->params.size(); ++i) {
+                state.frames.back()[fn->params.at(i)] = args.at(i);
+            }
+            state.depth++;
+            Result r = eval(fn->kids.at(0), state);
+            state.depth--;
+            state.frames.pop_back();
+
+            if (r.flow == Flow::Break || r.flow == Flow::Continue) {
+                std::cerr << "break/continue escaped function: " << root->name << std::endl;
+                return {0};
+            }
+            return {r.value};
+        }
+
+        case Type::Return: {
+            Result r = eval(root->kids.at(0), state);
+            r.flow = Flow::Return;
+            return r;
         }
     }
 
